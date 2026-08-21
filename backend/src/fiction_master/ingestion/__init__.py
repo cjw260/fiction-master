@@ -1,0 +1,1 @@
+"""Novel ingestion package."""

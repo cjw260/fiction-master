@@ -1,0 +1,29 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Runtime data and local model/vector caches
+data/*
+!data/.gitkeep
+
+# Novel source files stay local. Keep only directory documentation.
+fiction/*
+!fiction/.gitkeep
+!fiction/README.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.ses
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.venv/
+
+# Frontend
+node_modules/
+front/node_modules/
+front/dist/

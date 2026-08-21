@@ -1,0 +1,15 @@
+.git
+.env
+.DS_Store
+fiction/*
+!fiction/.gitkeep
+!fiction/README.md
+data/*
+node_modules
+front/node_modules
+front/dist
+backend/.venv
+backend/.pytest_cache
+backend/.ruff_cache
+backend/.coverage
+**/__pycache__

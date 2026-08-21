@@ -1,0 +1,9 @@
+{
+  "name": "fiction-master",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --dir front dev",
+    "build": "pnpm --dir front build",
+    "lint": "pnpm --dir front lint"
+  }
+}

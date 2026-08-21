@@ -1,0 +1,23 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Serif+SC:wght@400;500;600;700&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", sans-serif;
+  --font-serif: "Noto Serif SC", serif;
+
+  --color-background: #fdfbf7;
+  --color-foreground: #2c2a28;
+  --color-sidebar: #f4efe6;
+  --color-sidebar-foreground: #3a3835;
+  --color-primary: #8b4513;
+  --color-primary-foreground: #fdfbf7;
+  --color-muted: #e9e4d9;
+  --color-muted-foreground: #7a756d;
+  --color-border: #dcd7cc;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-foreground font-sans antialiased h-screen overflow-hidden selection:bg-primary/20;
+  }
+}
