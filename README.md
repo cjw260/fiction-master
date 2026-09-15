@@ -8,9 +8,12 @@
 - FastAPI 后端和 OpenAPI 文档。
 - TXT、Markdown、EPUB 章节解析与增量同步。
 - Qdrant dense + BM25 混合检索，Qwen 重排。
-- LangGraph 有界查询改写、书目路由、证据检查和一次重检。
+- 可选 LightRAG 人物/事件/势力关系图谱旁路；图谱线索回查原文后再参与回答。
+- LangGraph 有界查询改写、书目路由、证据检查和一次多查询重检。
 - SQLite 会话、消息、索引任务与引用持久化。
 - POST SSE 流式回答和前端 TypeScript 客户端。
+- 每条回答持久化展示来源、检索链路、模型调用、响应时间与 Chat Token。
+- 两本小说原文、主向量索引和全部现有知识图谱的可恢复分卷备份。
 
 ## 快速开始
 
@@ -26,7 +29,13 @@ cp .env.example .env
 DASHSCOPE_API_KEY=你的百炼APIKey
 ```
 
-将 `.txt`、`.md` 或 `.epub` 小说放入 `fiction/`，然后启动后端：
+将 `.txt`、`.md` 或 `.epub` 小说放入 `fiction/`。
+
+也可以在首次启动前运行 `python3 scripts/restore_dataset.py`，恢复仓库随附的小说、
+主索引和图谱数据。备份内容、当前图谱完成状态与完整性校验见
+[数据备份与恢复](backups/dataset/README.md)。
+
+然后启动后端：
 
 ```bash
 cd backend
@@ -68,13 +77,16 @@ Chat 与 Embedding 使用 OpenAI-compatible 客户端，可以分别设置 `*_BA
 
 - `fiction/` 是唯一原始素材入口；后端不会向里面写文件。
 - 每个文件视为一本小说，可使用子目录整理。
-- 完整小说被 `.gitignore` 排除，不会进入公开 Git。
+- `fiction/` 与 `data/` 的运行文件被 `.gitignore` 排除；完整数据快照另存于
+  `backups/dataset/` 并随仓库提交，包含小说原文、索引、图谱与现有对话。
 - SQLite、Qdrant、索引版本和缓存都位于 `data/`。
 - 文件 SHA-256 不变时不会重新调用向量 API。
 - 重建先写新索引版本，完成后原子切换；失败时继续保留旧索引。
 - 删除源文件并同步后，该书会标记为 `missing` 并停止参与检索。
 
 TXT 会依次尝试 UTF-8 BOM、UTF-8、GB18030。切片严格限制在单章内，约 900 字符，最大 1200 字符，重叠约 150 字符。
+
+问答首轮只检索原问题；证据审查判定不足时，才会生成最多 3 条互补查询。原问题与扩展查询批量 Embedding，分别执行 Dense + BM25，使用 RRF 合并去重后统一 Rerank。最多重检一次。
 
 ## API
 
@@ -117,3 +129,18 @@ docker compose up --build -d
 ```
 
 容器只运行一个 Uvicorn worker，这是嵌入式 Qdrant 的约束。`fiction/` 以只读方式挂载，`data/` 持久化。默认只监听服务器本机的 `127.0.0.1:8000`，公网部署请使用带认证的 HTTPS 反向代理。完整步骤见 [服务器部署指南](docs/DEPLOYMENT.md)。需要多用户或多实例时，应迁移到 PostgreSQL、独立 Qdrant 和持久任务队列。
+
+## 可选关系图谱检索
+
+需要增强人物关系、跨章节因果、势力结构和全书级问题时，可启用 LightRAG sidecar：
+
+```dotenv
+LIGHTRAG_ENABLED=true
+LIGHTRAG_API_KEY=请替换为随机密钥
+```
+
+```bash
+docker compose --profile graph up --build -d
+```
+
+LightRAG 只提供关系检索线索；最终证据、引用和回答仍由当前 Qdrant + Rerank 管线产生。图谱超时或失败时会自动降级，不影响普通问答。配置、数据生命周期与排查方式见 [LightRAG 接入说明](docs/LIGHTRAG.md)。

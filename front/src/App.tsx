@@ -21,6 +21,7 @@ import {
 
 import { fictionApi, streamMessage } from "./api/client";
 import type {
+  AnswerMetrics,
   Book,
   BookStatus,
   ChatScope,
@@ -41,6 +42,7 @@ const WELCOME_MESSAGE: Message = {
     "你好，我是**小说大师**。我会依据 fiction 目录中已经完成索引的小说原文，回答剧情、人物和世界观问题，并标注可核对的原文出处。今天想聊点什么？",
   model: null,
   usage: {},
+  metrics: null,
   latency_ms: null,
   error: null,
   created_at: new Date(0).toISOString(),
@@ -54,6 +56,18 @@ const BOOK_STATUS: Record<BookStatus, { label: string; className: string }> = {
   error: { label: "失败", className: "bg-red-100 text-red-700" },
   missing: { label: "已缺失", className: "bg-slate-200 text-slate-600" },
   duplicate: { label: "重复", className: "bg-blue-100 text-blue-700" },
+};
+
+const GRAPH_STATUS: Record<Book["graph_status"], string> = {
+  disabled: "图谱关闭",
+  pending: "图谱待构建",
+  queued: "图谱排队中",
+  indexing: "图谱构建中",
+  ready: "关系图谱就绪",
+  error: "图谱降级",
+  paused: "图谱已暂停",
+  superseded: "图谱已更新",
+  removing: "图谱清理中",
 };
 
 const RUNNING_JOB_STATUSES = new Set(["queued", "running"]);
@@ -95,6 +109,7 @@ function messageDraft(
     content,
     model: null,
     usage: {},
+    metrics: null,
     latency_ms: null,
     error: null,
     created_at: new Date().toISOString(),
@@ -153,6 +168,56 @@ function RichText({
 
 function configurationLabel(configured: boolean): string {
   return configured ? "已配置" : "未配置";
+}
+
+function formatDuration(milliseconds: number | null): string {
+  if (milliseconds === null) return "—";
+  if (milliseconds < 1000) return `${milliseconds}毫秒`;
+  return `${(milliseconds / 1000).toFixed(milliseconds < 10_000 ? 1 : 0)}秒`;
+}
+
+function AnswerMetricsSummary({ metrics }: { metrics: AnswerMetrics }) {
+  const retrievalStages = [
+    metrics.retrieval.dense ? "Dense" : null,
+    metrics.retrieval.bm25 ? "BM25" : null,
+    metrics.retrieval.rerank ? "Rerank" : null,
+    metrics.retrieval.graph
+      ? `LightRAG${metrics.retrieval.graph_mode ? `(${metrics.retrieval.graph_mode})` : ""}`
+      : null,
+  ].filter(Boolean);
+  const retrieval = metrics.retrieval.rounds
+    ? `${metrics.retrieval.rounds}轮 · ${retrievalStages.join(" + ") || "无可用检索器"}`
+    : "未检索";
+  const rows = [
+    [
+      "来源",
+      `${metrics.sources.books}本小说 · ${metrics.sources.chapters}个章节 · ${metrics.sources.evidence}条证据`,
+    ],
+    ["检索", retrieval],
+    [
+      "模型调用",
+      `Chat ${metrics.calls.chat}次 · Embedding ${metrics.calls.embedding}次 · Rerank ${metrics.calls.rerank}次 · Graph ${metrics.calls.graph}次`,
+    ],
+    [
+      "响应时间",
+      `首字 ${formatDuration(metrics.timing.first_token_ms)} · 总计 ${formatDuration(metrics.timing.total_ms)}`,
+    ],
+    [
+      "Chat Token",
+      `输入 ${metrics.tokens.input.toLocaleString("zh-CN")} · 输出 ${metrics.tokens.output.toLocaleString("zh-CN")}`,
+    ],
+  ];
+
+  return (
+    <dl className="mt-4 space-y-1.5 border-t border-border/70 pt-3 font-sans text-[11px] leading-relaxed text-muted-foreground">
+      {rows.map(([label, value]) => (
+        <div key={label} className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2">
+          <dt className="font-medium text-sidebar-foreground/75">{label}</dt>
+          <dd className="min-w-0 break-words">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
 }
 
 export default function App() {
@@ -696,7 +761,13 @@ export default function App() {
                   <div
                     key={novel.id}
                     className="group flex flex-col p-3 rounded-lg hover:bg-muted/50 transition-colors border border-transparent hover:border-border"
-                    title={novel.error ? friendlyError(novel.error) : novel.relative_path}
+                    title={
+                      novel.error
+                        ? friendlyError(novel.error)
+                        : novel.graph_error
+                          ? friendlyError(novel.graph_error)
+                          : novel.relative_path
+                    }
                   >
                     <div className="flex justify-between items-start gap-2 mb-1">
                       <span className="font-serif font-semibold text-sidebar-foreground group-hover:text-primary transition-colors truncate">
@@ -724,6 +795,19 @@ export default function App() {
                       <span className="truncate">{novel.author || "作者未知"}</span>
                       <span className="shrink-0">{formatWordCount(novel.word_count)}</span>
                     </div>
+                    {novel.graph_status !== "disabled" && (
+                      <div
+                        className={`mt-1 text-[10px] ${
+                          novel.graph_status === "ready"
+                            ? "text-emerald-700"
+                            : novel.graph_status === "error"
+                              ? "text-amber-700"
+                              : "text-muted-foreground"
+                        }`}
+                      >
+                        {GRAPH_STATUS[novel.graph_status]}
+                      </div>
+                    )}
                     {novel.error && novel.status !== "ready" && (
                       <div className="mt-1.5 text-[11px] text-red-700 truncate">
                         {friendlyError(novel.error)}
@@ -829,6 +913,14 @@ export default function App() {
                   {health ? (health.status === "ok" ? "正常" : "配置不完整") : "未知"}
                 </span>
               </div>
+              {health?.graph_enabled && (
+                <div className="flex justify-between">
+                  <span>LightRAG</span>
+                  <span className={health.graph_available ? "text-emerald-700" : "text-amber-700"}>
+                    {health.graph_available ? "可用" : "不可用（已降级）"}
+                  </span>
+                </div>
+              )}
               {models && (
                 <>
                   <div className="flex justify-between gap-2">
@@ -980,6 +1072,10 @@ export default function App() {
                         )}
                       </div>
                     )}
+
+                    {message.role === "assistant" &&
+                      message.status === "completed" &&
+                      message.metrics && <AnswerMetricsSummary metrics={message.metrics} />}
 
                     {message.role === "assistant" &&
                       ["failed", "cancelled"].includes(message.status) && (

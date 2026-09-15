@@ -1,12 +1,14 @@
 import asyncio
 from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 import pytest
 from sqlalchemy import select
 
 from fiction_master.config import Settings
-from fiction_master.models import Book, IngestionJob
+from fiction_master.models import Book, GraphIndex, IngestionJob
+from fiction_master.rag.lightrag import GraphTrackStatus, LightRagClient
 from fiction_master.services import AppServices
 
 
@@ -20,6 +22,27 @@ class FakeEmbedding:
     async def embed(self, texts: Sequence[str]) -> list[list[float]]:
         self.calls += 1
         return [[1.0, 0.0, 0.0, 0.0] for _text in texts]
+
+
+class FakeGraphClient:
+    def __init__(self) -> None:
+        self.insert_calls = 0
+        self.deleted: list[list[str]] = []
+
+    async def insert_chapters(self, *, texts: Sequence[str], file_sources: Sequence[str]) -> str:
+        assert len(texts) == len(file_sources)
+        self.insert_calls += 1
+        return f"track-{self.insert_calls}"
+
+    async def track_status(self, track_id: str) -> GraphTrackStatus:
+        return GraphTrackStatus(
+            complete=True,
+            failed=False,
+            document_ids=[f"doc-{track_id}"],
+        )
+
+    async def delete_documents(self, document_ids: Sequence[str]) -> None:
+        self.deleted.append(list(document_ids))
 
 
 async def wait_for_job(services: AppServices, job_id: str) -> IngestionJob:
@@ -116,5 +139,59 @@ async def test_recover_interrupted_job_and_book(tmp_path: Path) -> None:
             assert recovered_job is not None
             assert recovered_job.status == "failed"
             assert recovered_job.finished_at is not None
+    finally:
+        await services.close()
+
+
+@pytest.mark.asyncio
+async def test_primary_sync_schedules_optional_graph_index(tmp_path: Path) -> None:
+    fiction_dir = tmp_path / "fiction"
+    fiction_dir.mkdir()
+    (fiction_dir / "sample.txt").write_text(
+        "《图谱测试》\n作者：作者\n\n第一章 相遇\n\n甲在雨中帮助了乙。",
+        encoding="utf-8",
+    )
+    settings = Settings(
+        fiction_dir=fiction_dir,
+        data_dir=tmp_path / "data",
+        embedding_dimension=4,
+        auto_sync_on_startup=False,
+        lightrag_enabled=True,
+        lightrag_api_key="test-secret",
+        lightrag_index_poll_interval_seconds=0.001,
+        lightrag_index_book_titles=[],
+    )
+    services = await AppServices.create(settings)
+    fake_embedding = FakeEmbedding()
+    fake_graph = FakeGraphClient()
+    services.ingestion.embedding_provider = fake_embedding
+    assert services.graph_indexer is not None
+    services.graph_indexer.client = cast(LightRagClient, fake_graph)
+    try:
+        job = await services.ingestion.create_sync_job()
+        result = await wait_for_job(services, job.id)
+        assert result.status == "succeeded"
+        await services.graph_indexer.wait_for_idle()
+
+        async with services.database.session_factory() as session:
+            book = await session.scalar(select(Book).where(Book.relative_path == "sample.txt"))
+            assert book is not None
+            graph_index = await session.scalar(
+                select(GraphIndex).where(
+                    GraphIndex.book_id == book.id,
+                    GraphIndex.index_version == book.active_index_version,
+                )
+            )
+            assert graph_index is not None
+            assert graph_index.status == "ready"
+            assert graph_index.document_ids == ["doc-track-1"]
+        assert fake_embedding.calls == 1
+        assert fake_graph.insert_calls == 1
+
+        unchanged = await services.ingestion.create_sync_job()
+        await wait_for_job(services, unchanged.id)
+        await services.graph_indexer.wait_for_idle()
+        assert fake_embedding.calls == 1
+        assert fake_graph.insert_calls == 1
     finally:
         await services.close()

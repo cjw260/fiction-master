@@ -4,10 +4,11 @@
 !.env.example
 
 # Runtime data and local model/vector caches
+# A verified portable snapshot is committed separately under backups/dataset/.
 data/*
 !data/.gitkeep
 
-# Novel source files stay local. Keep only directory documentation.
+# Live source files are restored from backups/dataset/; keep them out of normal diffs.
 fiction/*
 !fiction/.gitkeep
 !fiction/README.md

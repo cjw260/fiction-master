@@ -15,6 +15,8 @@ class HealthResponse(ApiModel):
     database: bool
     vector_store: bool
     models_configured: bool
+    graph_enabled: bool = False
+    graph_available: bool = False
     version: str
 
 
@@ -41,6 +43,8 @@ class BookResponse(ApiModel):
     error: str | None
     duplicate_of: str | None
     updated_at: datetime
+    graph_status: str = "disabled"
+    graph_error: str | None = None
 
 
 class JobResponse(ApiModel):
@@ -117,6 +121,48 @@ class CitationResponse(ApiModel):
     end_offset: int
 
 
+class SourceMetrics(ApiModel):
+    books: int
+    chapters: int
+    evidence: int
+
+
+class RetrievalMetrics(ApiModel):
+    rounds: int
+    dense: bool
+    bm25: bool
+    rerank: bool
+    graph: bool = False
+    graph_mode: str | None = None
+    graph_queries: int = 0
+    graph_fallback: bool = False
+
+
+class ModelCallMetrics(ApiModel):
+    chat: int
+    embedding: int
+    rerank: int
+    graph: int = 0
+
+
+class TimingMetrics(ApiModel):
+    first_token_ms: int | None
+    total_ms: int
+
+
+class TokenMetrics(ApiModel):
+    input: int
+    output: int
+
+
+class AnswerMetrics(ApiModel):
+    sources: SourceMetrics
+    retrieval: RetrievalMetrics
+    calls: ModelCallMetrics
+    timing: TimingMetrics
+    tokens: TokenMetrics
+
+
 class MessageResponse(ApiModel):
     id: str
     conversation_id: str
@@ -125,6 +171,7 @@ class MessageResponse(ApiModel):
     content: str
     model: str | None
     usage: dict[str, object]
+    metrics: AnswerMetrics | None = None
     latency_ms: int | None
     error: str | None
     created_at: datetime

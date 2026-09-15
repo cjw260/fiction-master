@@ -5,6 +5,7 @@ fiction/*
 !fiction/.gitkeep
 !fiction/README.md
 data/*
+backups/
 node_modules
 front/node_modules
 front/dist

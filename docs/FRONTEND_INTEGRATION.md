@@ -10,7 +10,8 @@
 4. 输入区纸夹按钮用于“自动识别/指定书籍”范围选择。
 5. `streamMessage()` 消费 SSE，按 `delta` 累加回答并支持停止生成。
 6. `[n]` 可点击，引用卡展示书名、章节与 `excerpt`。
-7. 偏好设置展示后端健康状态和三个模型的配置状态。
+7. 每条新回答展示来源、检索链路、模型调用、响应时间和 Chat Token；指标随消息持久化。
+8. 偏好设置展示后端健康状态和三个模型的配置状态。
 
 Vite 开发服务器默认将 `/api` 代理到 `http://127.0.0.1:8000`，无需单独配置 CORS；可用根目录环境变量 `VITE_DEV_API_TARGET` 覆盖目标地址。
 
@@ -43,7 +44,7 @@ Vite 开发服务器默认将 `/api` 代理到 `http://127.0.0.1:8000`，无需�
 
 ```text
 event: status
-data: {"run_id":"...","stage":"retrieving","detail":"正在进行语义与关键词混合检索"}
+data: {"run_id":"...","stage":"retrieving","detail":"正在进行语义与关键词混合检索","attempt":1,"query_count":1}
 
 event: delta
 data: {"run_id":"...","text":"唐三选择跳下鬼见愁……[1]"}
@@ -52,10 +53,13 @@ event: citation
 data: {"ordinal":1,"book_title":"斗罗大陆","chapter_title":"第一集 ...","excerpt":"..."}
 
 event: done
-data: {"run_id":"...","message":{...}}
+data: {"run_id":"...","message":{"metrics":{"sources":{"books":1,"chapters":3,"evidence":6},"retrieval":{"rounds":1,"dense":true,"bm25":true,"rerank":true},"calls":{"chat":2,"embedding":1,"rerank":1},"timing":{"first_token_ms":1800,"total_ms":6200},"tokens":{"input":4320,"output":386}}}}
 ```
 
 `stage` 可能为：`accepted`、`routing`、`retrieving`、`reranking`、`writing`。
+第二轮检索的 `detail` 为“正在进行多查询混合检索”，`query_count` 最多为 4（原问题加 3 条扩展查询）。
+这些指标只汇总本次已有调用，不会发起额外模型请求。`tokens` 统计 Chat 输入、输出 Token，
+Embedding 与 Rerank 通过 `calls` 分别显示调用次数。旧消息没有 `metrics` 时前端不会显示指标区。
 
 错误事件：
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -60,9 +60,31 @@ class Settings(BaseSettings):
     citation_excerpt_chars: int = 300
     max_question_chars: int = 4000
 
-    @field_validator("cors_origins", mode="before")
+    # LightRAG is an optional sidecar. It supplies graph leads only; final
+    # evidence and citations still come from the primary Qdrant index.
+    lightrag_enabled: bool = False
+    lightrag_base_url: str = "http://127.0.0.1:9621"
+    lightrag_api_key: str | None = None
+    lightrag_query_timeout_seconds: float = 10.0
+    lightrag_index_timeout_seconds: float = 180.0
+    lightrag_index_poll_interval_seconds: float = 2.0
+    lightrag_index_max_wait_seconds: int = 3600
+    lightrag_index_batch_size: int = 20
+    lightrag_request_retries: int = 2
+    lightrag_index_book_titles: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    lightrag_mode: Literal["local", "global", "hybrid", "mix"] = "mix"
+    lightrag_top_k: int = 10
+    lightrag_chunk_top_k: int = 12
+    lightrag_max_entity_tokens: int = 2500
+    lightrag_max_relation_tokens: int = 3500
+    lightrag_max_total_tokens: int = 8000
+    lightrag_enable_rerank: bool = False
+    lightrag_expanded_query_limit: int = 3
+    lightrag_rrf_weight: float = 0.7
+
+    @field_validator("cors_origins", "lightrag_index_book_titles", mode="before")
     @classmethod
-    def parse_cors_origins(cls, value: object) -> object:
+    def parse_comma_separated_list(cls, value: object) -> object:
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
@@ -73,7 +95,52 @@ class Settings(BaseSettings):
             self.fiction_dir = (REPO_ROOT / self.fiction_dir).resolve()
         if not self.data_dir.is_absolute():
             self.data_dir = (REPO_ROOT / self.data_dir).resolve()
+        if self.lightrag_max_entity_tokens + self.lightrag_max_relation_tokens >= (
+            self.lightrag_max_total_tokens
+        ):
+            raise ValueError(
+                "LIGHTRAG_MAX_TOTAL_TOKENS must exceed entity and relation token budgets"
+            )
+        if self.lightrag_rrf_weight > 1:
+            raise ValueError("LIGHTRAG_RRF_WEIGHT must be at most 1")
+        if self.lightrag_enabled and not self.lightrag_api_key:
+            raise ValueError("LIGHTRAG_API_KEY is required when LIGHTRAG_ENABLED=true")
         return self
+
+    @field_validator("lightrag_request_retries")
+    @classmethod
+    def nonnegative_lightrag_retries(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("LIGHTRAG_REQUEST_RETRIES must be non-negative")
+        return value
+
+    @field_validator(
+        "lightrag_query_timeout_seconds",
+        "lightrag_index_timeout_seconds",
+        "lightrag_index_poll_interval_seconds",
+        "lightrag_rrf_weight",
+    )
+    @classmethod
+    def positive_lightrag_float(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("LightRAG timeout and weight settings must be positive")
+        return value
+
+    @field_validator(
+        "lightrag_index_max_wait_seconds",
+        "lightrag_index_batch_size",
+        "lightrag_top_k",
+        "lightrag_chunk_top_k",
+        "lightrag_max_entity_tokens",
+        "lightrag_max_relation_tokens",
+        "lightrag_max_total_tokens",
+        "lightrag_expanded_query_limit",
+    )
+    @classmethod
+    def positive_lightrag_int(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("LightRAG limits must be positive")
+        return value
 
     @property
     def database_url(self) -> str:

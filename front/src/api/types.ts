@@ -20,6 +20,8 @@ export interface Book {
   error: string | null;
   duplicate_of: string | null;
   updated_at: string;
+  graph_status: "disabled" | "pending" | "queued" | "indexing" | "ready" | "error" | "paused" | "superseded" | "removing";
+  graph_error: string | null;
 }
 
 export interface IngestionJob {
@@ -48,6 +50,38 @@ export interface Citation {
   end_offset: number;
 }
 
+export interface AnswerMetrics {
+  sources: {
+    books: number;
+    chapters: number;
+    evidence: number;
+  };
+  retrieval: {
+    rounds: number;
+    dense: boolean;
+    bm25: boolean;
+    rerank: boolean;
+    graph: boolean;
+    graph_mode: string | null;
+    graph_queries: number;
+    graph_fallback: boolean;
+  };
+  calls: {
+    chat: number;
+    embedding: number;
+    rerank: number;
+    graph: number;
+  };
+  timing: {
+    first_token_ms: number | null;
+    total_ms: number;
+  };
+  tokens: {
+    input: number;
+    output: number;
+  };
+}
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -56,6 +90,7 @@ export interface Message {
   content: string;
   model: string | null;
   usage: Record<string, unknown>;
+  metrics: AnswerMetrics | null;
   latency_ms: number | null;
   error: string | null;
   created_at: string;
@@ -80,6 +115,8 @@ export interface HealthStatus {
   database: boolean;
   vector_store: boolean;
   models_configured: boolean;
+  graph_enabled: boolean;
+  graph_available: boolean;
   version: string;
 }
 

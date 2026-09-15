@@ -12,8 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from fiction_master.config import Settings
 from fiction_master.errors import NotFoundError
 from fiction_master.ingestion.chunker import chunk_book
-from fiction_master.ingestion.parsers import SUPPORTED_SUFFIXES, parse_file
-from fiction_master.models import Book, Chapter, IngestionJob, utc_now
+from fiction_master.ingestion.graph_indexer import GraphIndexingService
+from fiction_master.ingestion.parsers import SUPPORTED_SUFFIXES, ParsedBook, parse_file
+from fiction_master.models import Book, Chapter, GraphIndex, IngestionJob, utc_now
+from fiction_master.rag.lightrag import GraphChapter
 from fiction_master.rag.providers import EmbeddingProvider
 from fiction_master.rag.vector_store import VectorStore
 
@@ -36,11 +38,13 @@ class IngestionService:
         session_factory: async_sessionmaker[AsyncSession],
         vector_store: VectorStore,
         embedding_provider: EmbeddingProvider,
+        graph_indexer: GraphIndexingService | None = None,
     ) -> None:
         self.settings = settings
         self.session_factory = session_factory
         self.vector_store = vector_store
         self.embedding_provider = embedding_provider
+        self.graph_indexer = graph_indexer
         self._lock = asyncio.Lock()
         self._tasks: set[asyncio.Task[None]] = set()
 
@@ -206,6 +210,7 @@ class IngestionService:
 
         duplicate_version: str | None = None
         duplicate_found = False
+        graph_only = False
         book_id: str | None = None
         old_version: str | None = None
         async with self.session_factory() as session:
@@ -222,15 +227,33 @@ class IngestionService:
                 await session.commit()
                 await session.refresh(book)
             if not force and book.content_hash == fingerprint and book.status == "ready":
-                return
-            duplicate = await session.scalar(
-                select(Book).where(
-                    Book.content_hash == fingerprint,
-                    Book.id != book.id,
-                    Book.status == "ready",
+                if self.graph_indexer is None or not book.active_index_version:
+                    return
+                graph_row = await session.scalar(
+                    select(GraphIndex).where(
+                        GraphIndex.book_id == book.id,
+                        GraphIndex.index_version == book.active_index_version,
+                        GraphIndex.status.in_(["queued", "indexing", "ready", "paused"]),
+                    )
+                )
+                if graph_row is not None:
+                    return
+                graph_only = True
+                book_id = book.id
+                old_version = book.active_index_version
+            duplicate = (
+                None
+                if graph_only
+                else await session.scalar(
+                    select(Book).where(
+                        Book.content_hash == fingerprint,
+                        Book.id != book.id,
+                        Book.status == "ready",
+                    )
                 )
             )
             if duplicate is not None:
+                book_id = book.id
                 duplicate_version = book.active_index_version
                 book.status = "duplicate"
                 book.duplicate_of = duplicate.id
@@ -240,7 +263,7 @@ class IngestionService:
                 book.error = f"Duplicate of {duplicate.relative_path}"
                 await session.commit()
                 duplicate_found = True
-            else:
+            elif not graph_only:
                 book.status = "indexing"
                 book.error = None
                 book.duplicate_of = None
@@ -249,6 +272,8 @@ class IngestionService:
                 old_version = book.active_index_version
 
         if duplicate_found:
+            if self.graph_indexer and book_id:
+                await self.graph_indexer.remove_book(book_id)
             if duplicate_version:
                 try:
                     await self.vector_store.delete_index_version(duplicate_version)
@@ -259,6 +284,16 @@ class IngestionService:
             raise RuntimeError("Book identity was not initialized")
 
         parsed = await asyncio.to_thread(parse_file, path)
+        if graph_only:
+            if old_version is None:
+                raise RuntimeError("Graph-only indexing requires an active primary index")
+            await self._schedule_graph_index(
+                book_id=book_id,
+                index_version=old_version,
+                content_hash=fingerprint,
+                parsed=parsed,
+            )
+            return
         chunks = chunk_book(
             parsed,
             target_chars=self.settings.chunk_target_chars,
@@ -341,6 +376,55 @@ class IngestionService:
                 await self.vector_store.delete_index_version(old_version)
             except Exception:
                 logger.exception("Failed to clean old index version %s", old_version)
+        await self._schedule_graph_index(
+            book_id=book_id,
+            index_version=index_version,
+            content_hash=fingerprint,
+            parsed=parsed,
+        )
+
+    async def _schedule_graph_index(
+        self,
+        *,
+        book_id: str,
+        index_version: str,
+        content_hash: str,
+        parsed: ParsedBook,
+    ) -> None:
+        if self.graph_indexer is None:
+            return
+        allowed_titles = self.settings.lightrag_index_book_titles
+        if allowed_titles and parsed.title not in allowed_titles:
+            logger.info(
+                "Skipping LightRAG graph indexing for %s because it is not in "
+                "LIGHTRAG_INDEX_BOOK_TITLES",
+                parsed.title,
+            )
+            return
+        chapters = [
+            GraphChapter(
+                ordinal=chapter.ordinal,
+                title=chapter.title,
+                content=chapter.content,
+                volume_title=chapter.volume_title,
+            )
+            for chapter in parsed.chapters
+        ]
+        try:
+            await self.graph_indexer.schedule(
+                book_id=book_id,
+                index_version=index_version,
+                content_hash=content_hash,
+                book_title=parsed.title,
+                author=parsed.author,
+                chapters=chapters,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # The primary Qdrant index is already committed and must remain
+            # usable even if the optional graph scheduler itself fails.
+            logger.exception("Failed to schedule optional graph index for %s", book_id)
 
     async def _discard_index(self, index_version: str) -> None:
         try:
@@ -370,6 +454,7 @@ class IngestionService:
         self, seen_paths: set[str], *, only_relative: str | None = None
     ) -> None:
         versions: list[str] = []
+        graph_book_ids: list[str] = []
         async with self.session_factory() as session:
             query = select(Book)
             if only_relative is not None:
@@ -380,6 +465,7 @@ class IngestionService:
                     continue
                 if book.active_index_version:
                     versions.append(book.active_index_version)
+                graph_book_ids.append(book.id)
                 book.active_index_version = None
                 book.status = "missing"
                 book.error = "Source file is missing"
@@ -389,6 +475,9 @@ class IngestionService:
                 await self.vector_store.delete_index_version(version)
             except Exception:
                 logger.exception("Failed to remove missing book index %s", version)
+        if self.graph_indexer:
+            for book_id in graph_book_ids:
+                await self.graph_indexer.remove_book(book_id)
 
     async def _update_job(self, job_id: str, **values: object) -> None:
         async with self.session_factory() as session:

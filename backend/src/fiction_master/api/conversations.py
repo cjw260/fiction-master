@@ -13,8 +13,10 @@ from sqlalchemy.orm import selectinload
 from fiction_master.api.dependencies import get_services
 from fiction_master.errors import FictionMasterError, NotFoundError
 from fiction_master.models import Citation, Conversation, Message, utc_now
-from fiction_master.rag.agent import PreparedAnswer, cited_evidence
+from fiction_master.rag.agent import PreparedAnswer, cited_evidence, normalize_source_citations
+from fiction_master.rag.metrics import AnswerRunMetrics
 from fiction_master.schemas import (
+    AnswerMetrics,
     ChatRequest,
     CitationResponse,
     ConversationCreate,
@@ -182,6 +184,7 @@ async def stream_message(
 
     async def generate() -> AsyncIterator[bytes]:
         started = time.perf_counter()
+        metrics = AnswerRunMetrics()
         answer_parts: list[str] = []
         prepare_task: asyncio.Task[PreparedAnswer] | None = None
         yield sse("status", {"run_id": assistant_id, "stage": "accepted", "detail": "已接收问题"})
@@ -198,6 +201,7 @@ async def stream_message(
                     scope_mode=scope_mode,
                     requested_book_ids=book_ids,
                     progress=progress,
+                    metrics=metrics,
                 )
             )
             while not prepare_task.done():
@@ -220,16 +224,30 @@ async def stream_message(
             if not prepared.no_retrieval and not prepared.evidence:
                 fallback = "我没有在当前已索引的小说原文中找到足够依据，暂时无法可靠回答这个问题。"
                 answer_parts.append(fallback)
+                metrics.first_token_ms = int((time.perf_counter() - started) * 1000)
                 yield sse("delta", {"run_id": assistant_id, "text": fallback})
             else:
-                async for text_part in services.agent.stream_answer(prepared):
+                async for text_part in services.agent.stream_answer(prepared, metrics):
                     if await request.is_disconnected():
                         raise asyncio.CancelledError
+                    if metrics.first_token_ms is None:
+                        metrics.first_token_ms = int((time.perf_counter() - started) * 1000)
                     answer_parts.append(text_part)
                     yield sse("delta", {"run_id": assistant_id, "text": text_part})
 
-            answer = "".join(answer_parts).strip()
+            answer = normalize_source_citations("".join(answer_parts)).strip()
             selected_citations = cited_evidence(answer, prepared.evidence)
+            metrics.total_ms = int((time.perf_counter() - started) * 1000)
+            source_hits = [hit for _ordinal, hit in selected_citations]
+            source_books = {(hit.book_id or hit.book_title) for hit in source_hits}
+            source_chapters = {
+                (hit.book_id or hit.book_title, hit.chapter_title) for hit in source_hits
+            }
+            metrics_payload = metrics.to_payload(
+                source_books=len(source_books),
+                source_chapters=len(source_chapters),
+                source_evidence=len(source_hits),
+            )
             citation_models: list[Citation] = []
             async with services.database.session_factory() as session:
                 assistant = await session.get(Message, assistant_id)
@@ -237,7 +255,13 @@ async def stream_message(
                     raise NotFoundError("message")
                 assistant.status = "completed"
                 assistant.content = answer
-                assistant.latency_ms = int((time.perf_counter() - started) * 1000)
+                assistant.latency_ms = metrics.total_ms
+                assistant.usage = {
+                    "prompt_tokens": metrics.input_tokens,
+                    "completion_tokens": metrics.output_tokens,
+                    "total_tokens": metrics.input_tokens + metrics.output_tokens,
+                    "answer_metrics": metrics_payload,
+                }
                 for ordinal, hit in selected_citations:
                     citation = Citation(
                         message_id=assistant_id,
@@ -264,6 +288,7 @@ async def stream_message(
                     content=assistant.content,
                     model=assistant.model,
                     usage=assistant.usage,
+                    metrics=AnswerMetrics.model_validate(metrics_payload),
                     latency_ms=assistant.latency_ms,
                     error=assistant.error,
                     created_at=assistant.created_at,

@@ -1,0 +1,137 @@
+{
+  "format_version": 1,
+  "captured_at": "2026-09-15T02:27:04.115797+00:00",
+  "archive_sha256": "9bef22ca643bec0ce035778151c31fe37352d3d31504cec38a989574bb4b9c2b",
+  "uncompressed_size": 678298268,
+  "archive_size": 289940146,
+  "files": [
+    {
+      "path": "data/fiction_master.db",
+      "size": 1372160,
+      "sha256": "1d5e7c90782448005df29e58a11e4daed1fdeecb314db9d9303c4de8649da9a8"
+    },
+    {
+      "path": "data/lightrag/rag_storage/fiction_master/graph_chunk_entity_relation.graphml",
+      "size": 22844620,
+      "sha256": "b9d53c2a02c7becb0ef7f059a539b7f324f895b6fe9aa456bb6ac51a618a5d18"
+    },
+    {
+      "path": "data/lightrag/rag_storage/fiction_master/kv_store_doc_status.json",
+      "size": 856840,
+      "sha256": "df46ec2fb8a5d7ae7eae880a3febfa5a757564536624660da1946869b823ed40"
+    },
+    {
+      "path": "data/lightrag/rag_storage/fiction_master/kv_store_entity_chunks.json",
+      "size": 3068476,
+      "sha256": "5ec15e347dbdd715002ae1559df046b81079f65231c1b97b3e79922b267409ee"
+    },
+    {
+      "path": "data/lightrag/rag_storage/fiction_master/kv_store_full_docs.json",
+      "size": 9531028,
+      "sha256": "09b76cb31c6dab98228259f03d05bac404af49294b528d86d07c8237ebf7b232"
+    },
+    {
+      "path": "data/lightrag/rag_storage/fiction_master/kv_store_full_entities.json",
+      "size": 552820,
+      "sha256": "f77729935f7d7b05488dc6edc4941ad5c4db08cd13e850f2899556fffd6fa110"
+    },
+    {
+      "path": "data/lightrag/rag_storage/fiction_master/kv_store_full_relations.json",
+      "size": 1847531,
+      "sha256": "38af435ba9b0a0db822a46cc557fed532913fafbf6301161c70246a0b9deba18"
+    },
+    {
+      "path": "data/lightrag/rag_storage/fiction_master/kv_store_llm_response_cache.json",
+      "size": 209768043,
+      "sha256": "df62b956a83989497b0972dbdbe62407ccdf763cb4a58f4a01e17c3257f31534"
+    },
+    {
+      "path": "data/lightrag/rag_storage/fiction_master/kv_store_relation_chunks.json",
+      "size": 4574970,
+      "sha256": "be21be1c9bb0dc5d456619c6bbce5076e6f069bd0b5b7f99c639fd7222a8fe66"
+    },
+    {
+      "path": "data/lightrag/rag_storage/fiction_master/kv_store_text_chunks.json",
+      "size": 11394715,
+      "sha256": "2c83b294f107b64f665e0dc37aabe87a32b743680eb60cde455d596c511f1a26"
+    },
+    {
+      "path": "data/lightrag/rag_storage/fiction_master/vdb_chunks.json",
+      "size": 30862043,
+      "sha256": "dd7aa3e9b694577b10958e5d5ce17b48602735888aeea5bfcc3c6cb727461089"
+    },
+    {
+      "path": "data/lightrag/rag_storage/fiction_master/vdb_entities.json",
+      "size": 52712130,
+      "sha256": "54eed248ebce62b7559c6a4617562027ed80e3faa941abc2d2603f30d02e3c67"
+    },
+    {
+      "path": "data/lightrag/rag_storage/fiction_master/vdb_relationships.json",
+      "size": 124457875,
+      "sha256": "bbdf18a95c6a82f44aaf4b68ecb0c979c294ffb4b103c4064f1b6e3a5531bf5a"
+    },
+    {
+      "path": "data/lightrag/tiktoken/fb374d419588a4632f3f557e76b4b70aebbca790",
+      "size": 3613922,
+      "sha256": "446a9538cb6c348e3516120d7c08b09f57c36495e2acfffe59a5bf8b0cfb1a2d"
+    },
+    {
+      "path": "data/qdrant/collection/fiction_chunks/storage.sqlite",
+      "size": 176648192,
+      "sha256": "604c7b7e334b3ff760e0511fc3c42854f0bd9e92b6b00a19f7918e5c4200c409"
+    },
+    {
+      "path": "data/qdrant/meta.json",
+      "size": 599,
+      "sha256": "3041a20dd201b103f6132cb5c764ceefb481139d095a7feab376140e7b81552d"
+    },
+    {
+      "path": "fiction/1.txt",
+      "size": 8646739,
+      "sha256": "e7ec9388fb794d85820b8a28a6c643762e9ce883fe0553b1ba350f680b9a0473"
+    },
+    {
+      "path": "fiction/2.txt",
+      "size": 15545565,
+      "sha256": "9c2f1ce4c4620c177021287d3b24692febf5d43341aac9d96a793b245be56692"
+    }
+  ],
+  "parts": [
+    {
+      "name": "dataset.tar.gz.part-001",
+      "size": 50331648,
+      "sha256": "dd94fc74f4ff79b0ed61f0cc5a929796c813195c1a3d03bbac36bf7e6f56c7de"
+    },
+    {
+      "name": "dataset.tar.gz.part-002",
+      "size": 50331648,
+      "sha256": "0f3dfd1e5f55abae4d0077b06d6ac3e7c3f3d4fca3b54033a6a34dbe243a80ec"
+    },
+    {
+      "name": "dataset.tar.gz.part-003",
+      "size": 50331648,
+      "sha256": "056c5b73b3f5f15f9fa5e4437e6a92517a8b2807193f7ca512b08cc2df28ec8e"
+    },
+    {
+      "name": "dataset.tar.gz.part-004",
+      "size": 50331648,
+      "sha256": "a8e683d7234ccd78fbfe324f2dccec560e299169c6f3cdfa179994d19073b6be"
+    },
+    {
+      "name": "dataset.tar.gz.part-005",
+      "size": 50331648,
+      "sha256": "b1b93c500de361ab4b5e043b25e2534015bad31a5b20827ef6274232f41617c3"
+    },
+    {
+      "name": "dataset.tar.gz.part-006",
+      "size": 38281906,
+      "sha256": "3cdef999f441f5dfc72d9a09b336c5d8a76757400ee7fa59a0600724ad8ea692"
+    }
+  ],
+  "notes": [
+    "Captured with both application and LightRAG Docker containers paused.",
+    "Includes all persisted graph data, vector indexes, LLM cache, application database, and both novel sources.",
+    "Graph index states: one ready and one paused; this snapshot does not imply all chapters have completed graph extraction.",
+    "Excludes .env credentials, runtime lock, OS metadata, and already tracked directory documentation."
+  ]
+}

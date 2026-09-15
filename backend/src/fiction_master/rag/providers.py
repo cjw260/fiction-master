@@ -21,6 +21,12 @@ class CompletionResult:
 
 
 @dataclass(slots=True)
+class StreamChunk:
+    text: str = ""
+    usage: dict[str, object] | None = None
+
+
+@dataclass(slots=True)
 class RerankResult:
     index: int
     score: float
@@ -35,7 +41,7 @@ class ChatProvider(Protocol):
 
     def stream(
         self, messages: Sequence[dict[str, str]], *, temperature: float = 0.2
-    ) -> AsyncIterator[str]: ...
+    ) -> AsyncIterator[StreamChunk]: ...
 
 
 class EmbeddingProvider(Protocol):
@@ -86,7 +92,7 @@ class OpenAICompatibleChatProvider:
 
     async def stream(
         self, messages: Sequence[dict[str, str]], *, temperature: float = 0.2
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterator[StreamChunk]:
         self._ensure_configured()
         try:
             response = await self.client.chat.completions.create(
@@ -94,13 +100,13 @@ class OpenAICompatibleChatProvider:
                 messages=list(messages),  # type: ignore[arg-type]
                 temperature=temperature,
                 stream=True,
+                stream_options={"include_usage": True},
             )
             async for chunk in response:
-                if not chunk.choices:
-                    continue
-                content = chunk.choices[0].delta.content
-                if content:
-                    yield content
+                content = chunk.choices[0].delta.content if chunk.choices else None
+                usage = chunk.usage.model_dump() if chunk.usage else None
+                if content or usage:
+                    yield StreamChunk(text=content or "", usage=usage)
         except Exception as exc:
             raise ProviderError(f"Chat stream failed: {exc}") from exc
 

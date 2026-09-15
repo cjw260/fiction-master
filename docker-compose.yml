@@ -4,6 +4,12 @@ services:
     init: true
     env_file:
       - .env
+    environment:
+      LIGHTRAG_BASE_URL: http://lightrag:9621
+    depends_on:
+      lightrag:
+        condition: service_healthy
+        required: false
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
@@ -21,4 +27,55 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+    restart: unless-stopped
+
+  lightrag:
+    profiles:
+      - graph
+    image: ghcr.io/hkuds/lightrag:v1.5.5
+    init: true
+    env_file:
+      - .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 9621
+      WORKING_DIR: /app/data/rag_storage
+      INPUT_DIR: /app/data/inputs
+      PROMPT_DIR: /app/data/prompts
+      WORKSPACE: fiction_master
+      SUMMARY_LANGUAGE: Chinese
+      ENTITY_EXTRACTION_USE_JSON: "true"
+      ENABLE_CONTENT_HEADINGS: "true"
+      LLM_BINDING: openai
+      LLM_BINDING_HOST: ${CHAT_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      LLM_BINDING_API_KEY: ${DASHSCOPE_API_KEY:-}
+      LLM_MODEL: ${CHAT_MODEL:-qwen-plus}
+      EMBEDDING_BINDING: openai
+      EMBEDDING_BINDING_HOST: ${EMBEDDING_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      EMBEDDING_BINDING_API_KEY: ${DASHSCOPE_API_KEY:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-v4}
+      EMBEDDING_DIM: ${EMBEDDING_DIMENSION:-1024}
+      EMBEDDING_SEND_DIM: "true"
+      EMBEDDING_USE_BASE64: "false"
+      # Qdrant candidates are reranked by fiction-master after graph expansion.
+      # Keep LightRAG's own reranker off unless separately configured.
+      RERANK_BINDING: "null"
+      RERANK_BY_DEFAULT: "false"
+      LIGHTRAG_API_KEY: ${LIGHTRAG_API_KEY:-}
+    ports:
+      - "127.0.0.1:9621:9621"
+    volumes:
+      - ./data/lightrag:/app/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:9621/health', timeout=5)
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     restart: unless-stopped

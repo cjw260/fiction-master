@@ -6,5 +6,6 @@
 - `.md`：使用 front matter/H1 作为书籍信息，二级及以下标题作为章节。
 - `.epub`：按照 EPUB spine 顺序导入正文。
 
-每个文件视为一本小说。完整原文、索引和运行数据不会提交到公开 Git 仓库。
+每个文件视为一本小说。此目录的运行文件不直接进入 Git；完整原文、索引和图谱快照
+随仓库保存在 `backups/dataset/`，可通过 `python3 scripts/restore_dataset.py` 恢复。
 服务启动时会执行增量检查，也可以从前端调用 `POST /api/v1/library/sync` 手动同步。

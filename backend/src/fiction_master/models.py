@@ -80,6 +80,38 @@ class IngestionJob(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class GraphIndex(Base):
+    """Tracks one versioned LightRAG projection for a book.
+
+    The graph index is deliberately independent from ``Book.status``. A book
+    remains queryable through the primary Qdrant index when graph indexing is
+    queued, unavailable, or failed.
+    """
+
+    __tablename__ = "graph_indices"
+    __table_args__ = (
+        Index("ix_graph_indices_book_version", "book_id", "index_version", unique=True),
+        Index("ix_graph_indices_book_status", "book_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    book_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("books.id", ondelete="CASCADE"), index=True
+    )
+    index_version: Mapped[str] = mapped_column(String(36), index=True)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
+    track_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    document_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    file_sources: Mapped[list[str]] = mapped_column(JSON, default=list)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class Conversation(Base):
     __tablename__ = "conversations"
 
@@ -117,6 +149,11 @@ class Message(Base):
     citations: Mapped[list[Citation]] = relationship(
         back_populates="message", cascade="all, delete-orphan", order_by="Citation.ordinal"
     )
+
+    @property
+    def metrics(self) -> dict[str, object] | None:
+        value = self.usage.get("answer_metrics")
+        return value if isinstance(value, dict) else None
 
 
 class Citation(Base):

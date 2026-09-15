@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from fiction_master.api.dependencies import get_services
 from fiction_master.errors import NotFoundError
-from fiction_master.models import Book, IngestionJob
+from fiction_master.models import Book, GraphIndex, IngestionJob
 from fiction_master.schemas import BookResponse, JobAccepted, JobResponse
 from fiction_master.services import AppServices
 
@@ -16,7 +16,32 @@ router = APIRouter(tags=["library"])
 async def list_books(services: AppServices = Depends(get_services)) -> list[BookResponse]:
     async with services.database.session_factory() as session:
         books = list((await session.scalars(select(Book).order_by(Book.title))).all())
-    return [BookResponse.model_validate(book) for book in books]
+        graph_rows = (
+            list((await session.scalars(select(GraphIndex))).all())
+            if services.settings.lightrag_enabled
+            else []
+        )
+    graph_by_version = {
+        (row.book_id, row.index_version): (row.status, row.error)
+        for row in sorted(graph_rows, key=lambda item: item.updated_at)
+    }
+    return [
+        BookResponse.model_validate(book).model_copy(
+            update={
+                "graph_status": (
+                    graph_by_version.get((book.id, book.active_index_version), ("pending", None))[0]
+                    if services.settings.lightrag_enabled and book.active_index_version
+                    else "disabled"
+                ),
+                "graph_error": (
+                    graph_by_version.get((book.id, book.active_index_version), ("pending", None))[1]
+                    if services.settings.lightrag_enabled and book.active_index_version
+                    else None
+                ),
+            }
+        )
+        for book in books
+    ]
 
 
 @router.post("/library/sync", response_model=JobAccepted, status_code=status.HTTP_202_ACCEPTED)

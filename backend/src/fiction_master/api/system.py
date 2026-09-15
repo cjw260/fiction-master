@@ -23,11 +23,16 @@ async def health(services: AppServices = Depends(get_services)) -> HealthRespons
     models_configured = bool(
         services.settings.resolved_chat_key and services.settings.resolved_embedding_key
     )
+    graph_available = (
+        await services.lightrag_client.health() if services.lightrag_client is not None else False
+    )
     return HealthResponse(
         status="ok" if database_ok and vector_ok and models_configured else "degraded",
         database=database_ok,
         vector_store=vector_ok,
         models_configured=models_configured,
+        graph_enabled=services.settings.lightrag_enabled,
+        graph_available=graph_available,
         version=__version__,
     )
 

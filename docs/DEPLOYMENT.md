@@ -53,6 +53,18 @@ curl http://127.0.0.1:8000/api/v1/health
 
 Compose 默认只把服务绑定到服务器本机 `127.0.0.1:8000`，不能从公网直接访问。
 
+如需关系图谱检索，在 `.env` 设置 `LIGHTRAG_ENABLED=true` 和一个随机的
+`LIGHTRAG_API_KEY`，然后使用：
+
+```bash
+docker compose --profile graph up --build -d
+docker compose --profile graph logs -f lightrag
+```
+
+LightRAG 的 `9621` 同样只绑定到 `127.0.0.1`，不得通过反向代理向公网暴露。
+图谱数据位于 `data/lightrag/`，会随本节的 `data` 备份一起保存。完整说明见
+[LightRAG 关系图谱检索](LIGHTRAG.md)。
+
 ## 4. 配置域名、HTTPS 和访问密码
 
 推荐在宿主机安装 Caddy。先将域名的 A/AAAA 记录指向服务器，再生成密码哈希：
@@ -129,3 +141,4 @@ curl http://127.0.0.1:8000/api/v1/health
 - Qdrant 目录被锁：确认只有一个应用容器在运行。
 - 小说状态为 `error`：查看任务错误；模型额度恢复后，从 UI 点击单书重建。
 - SSE 经代理不流式：确认代理没有缓存响应，且没有设置过短的上游响应超时。
+- `graph_enabled: true` 但 `graph_available: false`：检查 `lightrag` 容器日志、API Key 和模型配置；普通问答会自动降级。
